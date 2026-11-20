@@ -1,0 +1,28 @@
+{
+	"schemaVersion": 1,
+	"id": "${mod_id}",
+	"version": "${version}",
+	"name": "${mod_name}",
+	"description": "${mod_description}",
+	"authors": [
+		"MrBuggI"
+	],
+	"contact": {
+		"homepage": "https://github.com/MrBuggI/waterfall-mist",
+		"sources": "https://github.com/MrBuggI/waterfall-mist"
+	},
+	"license": "All Rights Reserved",
+	"icon": "assets/waterfallmist/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"io.github.mrbuggi.waterfallmist.WaterfallMistClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.14.24",
+		"minecraft": "~1.20.1",
+		"java": ">=17",
+		"fabric-api": "*"
+	}
+}
