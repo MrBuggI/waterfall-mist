@@ -17,8 +17,8 @@ import java.util.Random;
 
 public final class WaterfallManager {
     private static final int SEARCH_RADIUS_XZ = 24;
-    private static final int SEARCH_RADIUS_Y = 12;
-    private static final int SAMPLES_PER_TICK = 28;
+    private static final int SEARCH_RADIUS_Y = 14;
+    private static final int SAMPLES_PER_TICK = 32;
     private static final int MIN_FALL_HEIGHT = 3;
     private static final int MAX_TRACKED_LIFETIME = 50;
 
@@ -65,12 +65,14 @@ public final class WaterfallManager {
                 continue;
             }
 
+            // Check if water is falling from directly above
             mutable.move(Direction.UP);
             FluidState aboveFluid = world.getFluidState(mutable);
             if (aboveFluid.isEmpty() || !aboveFluid.isIn(FluidTags.WATER) || aboveFluid.isStill()) {
                 continue;
             }
 
+            // Count the fall height of the stream
             int height = 1;
             while (height < 24) {
                 mutable.move(Direction.UP);
@@ -140,38 +142,49 @@ public final class WaterfallManager {
     }
 
     private void spawnWaterfallParticles(ClientWorld world, BlockPos pos, int height) {
-        double px = pos.getX() + 0.5 + (random.nextDouble() - 0.5) * 0.8;
-        double py = pos.getY() + 0.85 + random.nextDouble() * 0.15;
-        double pz = pos.getZ() + 0.5 + (random.nextDouble() - 0.5) * 0.8;
+        // Particles radiate slightly OUTWARD from the stream impact center
+        double angle = random.nextDouble() * Math.PI * 2.0;
+        double mistDist = 0.45 + random.nextDouble() * 0.55;
+        double px = pos.getX() + 0.5 + Math.cos(angle) * mistDist;
+        double pz = pos.getZ() + 0.5 + Math.sin(angle) * mistDist;
+        double py = pos.getY() + 0.95 + random.nextDouble() * 0.15;
 
+        double mvx = Math.cos(angle) * (0.015 + random.nextDouble() * 0.025);
+        double mvy = 0.025 + random.nextDouble() * 0.035;
+        double mvz = Math.sin(angle) * (0.015 + random.nextDouble() * 0.025);
+
+        // 1. Pure white mist (Campfire smoke sprite, tinted crisp white with soft alpha)
+        if (random.nextFloat() < (height >= 8 ? 0.70F : 0.45F)) {
+            world.addParticle(WaterfallMistClient.MIST, px, py, pz, mvx, mvy, mvz);
+        }
+
+        // 2. Soft white cloud puff
+        if (random.nextFloat() < 0.35F) {
+            double cx = pos.getX() + 0.5 + Math.cos(angle) * (0.40 + random.nextDouble() * 0.40);
+            double cz = pos.getZ() + 0.5 + Math.sin(angle) * (0.40 + random.nextDouble() * 0.40);
+            world.addParticle(ParticleTypes.CLOUD, cx, py + 0.05, cz, mvx * 0.5, 0.015, mvz * 0.5);
+        }
+
+        // 3. Water splashes (jumping outward from impact)
         int splashCount = 1 + (height >= 6 ? 2 : 1);
         for (int i = 0; i < splashCount; i++) {
-            double sx = (random.nextDouble() - 0.5) * 0.7;
-            double sz = (random.nextDouble() - 0.5) * 0.7;
-            double vx = (random.nextDouble() - 0.5) * 0.18;
-            double vy = 0.12 + random.nextDouble() * 0.14;
-            double vz = (random.nextDouble() - 0.5) * 0.18;
-            world.addParticle(ParticleTypes.SPLASH, pos.getX() + 0.5 + sx, py, pos.getZ() + 0.5 + sz, vx, vy, vz);
+            double sAngle = random.nextDouble() * Math.PI * 2.0;
+            double sDist = 0.30 + random.nextDouble() * 0.35;
+            double sx = pos.getX() + 0.5 + Math.cos(sAngle) * sDist;
+            double sz = pos.getZ() + 0.5 + Math.sin(sAngle) * sDist;
+            double svx = Math.cos(sAngle) * (0.04 + random.nextDouble() * 0.08);
+            double svy = 0.12 + random.nextDouble() * 0.14;
+            double svz = Math.sin(sAngle) * (0.04 + random.nextDouble() * 0.08);
+            world.addParticle(ParticleTypes.SPLASH, sx, py, sz, svx, svy, svz);
         }
 
-        if (random.nextFloat() < 0.65F) {
-            double bx = pos.getX() + 0.5 + (random.nextDouble() - 0.5) * 0.9;
-            double bz = pos.getZ() + 0.5 + (random.nextDouble() - 0.5) * 0.9;
-            world.addParticle(ParticleTypes.BUBBLE_POP, bx, py, bz, 0.0, 0.02, 0.0);
-        }
-
-        if (random.nextFloat() < (height >= 8 ? 0.45F : 0.25F)) {
-            double mx = (random.nextDouble() - 0.5) * 0.05;
-            double my = 0.03 + random.nextDouble() * 0.04;
-            double mz = (random.nextDouble() - 0.5) * 0.05;
-            world.addParticle(ParticleTypes.CAMPFIRE_COSY_SMOKE, px, py + 0.1, pz, mx, my, mz);
-        }
-
-        if (random.nextFloat() < 0.30F) {
-            double cx = (random.nextDouble() - 0.5) * 0.03;
-            double cy = 0.01 + random.nextDouble() * 0.02;
-            double cz = (random.nextDouble() - 0.5) * 0.03;
-            world.addParticle(ParticleTypes.CLOUD, px, py + 0.05, pz, cx, cy, cz);
+        // 4. Surface foam bubbles
+        if (random.nextFloat() < 0.55F) {
+            double fAngle = random.nextDouble() * Math.PI * 2.0;
+            double fDist = 0.35 + random.nextDouble() * 0.45;
+            double bx = pos.getX() + 0.5 + Math.cos(fAngle) * fDist;
+            double bz = pos.getZ() + 0.5 + Math.sin(fAngle) * fDist;
+            world.addParticle(ParticleTypes.BUBBLE_POP, bx, py, bz, 0.0, 0.015, 0.0);
         }
     }
 }
