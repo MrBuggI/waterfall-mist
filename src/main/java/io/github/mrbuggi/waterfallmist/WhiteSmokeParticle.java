@@ -28,9 +28,9 @@ public class WhiteSmokeParticle extends SpriteBillboardParticle {
         this.velocityY = vy;
         this.velocityZ = vz;
 
-        // Pure white mist with slight soft blue/cyan tint
+        float baseAlpha = WaterfallConfig.get().mistOpacity;
         this.setColor(0.95F, 0.98F, 1.0F);
-        this.setAlpha(0.60F);
+        this.setAlpha(baseAlpha);
     }
 
     @Override
@@ -44,7 +44,8 @@ public class WhiteSmokeParticle extends SpriteBillboardParticle {
         this.setSpriteForAge(this.spriteProvider);
 
         float lifeRatio = (float) this.age / (float) this.maxAge;
-        this.setAlpha(Math.max(0.0F, (1.0F - lifeRatio) * 0.60F));
+        float baseAlpha = WaterfallConfig.get().mistOpacity;
+        this.setAlpha(Math.max(0.0F, (1.0F - lifeRatio) * baseAlpha));
         this.scale(this.scale * 1.018F);
     }
 

@@ -21,10 +21,13 @@ public class WaterfallMistClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        WaterfallConfig.load();
+
         Registry.register(Registries.PARTICLE_TYPE, new Identifier(MOD_ID, "mist"), MIST);
         ParticleFactoryRegistry.getInstance().register(MIST, WhiteSmokeParticle.Factory::new);
 
         ClientTickEvents.END_CLIENT_TICK.register(waterfallManager::tick);
-        LOGGER.info("Waterfall Mist initialized");
+        LOGGER.info("Waterfall Mist initialized with config (mistOpacity={}, minFallHeight={})",
+                WaterfallConfig.get().mistOpacity, WaterfallConfig.get().minFallHeight);
     }
 }
