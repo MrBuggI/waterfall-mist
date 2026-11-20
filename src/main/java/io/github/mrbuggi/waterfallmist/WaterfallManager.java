@@ -1,5 +1,6 @@
 package io.github.mrbuggi.waterfallmist;
 
+import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.fluid.FluidState;
@@ -18,7 +19,7 @@ import java.util.Random;
 public final class WaterfallManager {
     private static final int SEARCH_RADIUS_XZ = 24;
     private static final int SEARCH_RADIUS_Y = 14;
-    private static final int SAMPLES_PER_TICK = 32;
+    private static final int SAMPLES_PER_TICK = 36;
     private static final int MIN_FALL_HEIGHT = 3;
     private static final int MAX_TRACKED_LIFETIME = 50;
 
@@ -60,23 +61,17 @@ public final class WaterfallManager {
 
             mutable.set(center.getX() + dx, center.getY() + dy, center.getZ() + dz);
 
-            FluidState currentFluid = world.getFluidState(mutable);
-            if (!currentFluid.isIn(FluidTags.WATER)) {
+            // Only proceed if this exact block is the true bottom impact point
+            if (!isWaterImpactBase(world, mutable)) {
                 continue;
             }
 
-            // Check if water is falling from directly above
-            mutable.move(Direction.UP);
-            FluidState aboveFluid = world.getFluidState(mutable);
-            if (aboveFluid.isEmpty() || !aboveFluid.isIn(FluidTags.WATER) || aboveFluid.isStill()) {
-                continue;
-            }
-
-            // Count the fall height of the stream
-            int height = 1;
+            // Measure how high the water fell to reach this impact point
+            BlockPos.Mutable tracer = mutable.mutableCopy();
+            int height = 0;
             while (height < 24) {
-                mutable.move(Direction.UP);
-                FluidState stepFluid = world.getFluidState(mutable);
+                tracer.move(Direction.UP);
+                FluidState stepFluid = world.getFluidState(tracer);
                 if (stepFluid.isEmpty() || !stepFluid.isIn(FluidTags.WATER)) {
                     break;
                 }
@@ -84,7 +79,7 @@ public final class WaterfallManager {
             }
 
             if (height >= MIN_FALL_HEIGHT) {
-                BlockPos impactPos = new BlockPos(center.getX() + dx, center.getY() + dy, center.getZ() + dz);
+                BlockPos impactPos = mutable.toImmutable();
                 WaterfallData existing = activeWaterfalls.get(impactPos);
                 if (existing != null) {
                     existing.lifetime = MAX_TRACKED_LIFETIME;
@@ -94,6 +89,50 @@ public final class WaterfallManager {
                 }
             }
         }
+    }
+
+    private boolean isWaterImpactBase(ClientWorld world, BlockPos pos) {
+        FluidState currentFluid = world.getFluidState(pos);
+        if (!currentFluid.isIn(FluidTags.WATER)) {
+            return false;
+        }
+
+        // Must have falling water directly above
+        FluidState aboveFluid = world.getFluidState(pos.up());
+        if (aboveFluid.isEmpty() || !aboveFluid.isIn(FluidTags.WATER) || aboveFluid.isStill()) {
+            return false;
+        }
+
+        // The vertical fall MUST terminate here — check below
+        BlockPos downPos = pos.down();
+        BlockState belowState = world.getBlockState(downPos);
+
+        // 1. Water hits solid ground (stone, dirt, floor)
+        if (!belowState.getCollisionShape(world, downPos).isEmpty() || belowState.isSolid()) {
+            return true;
+        }
+
+        // 2. If below is air, water is still falling mid-air
+        if (belowState.isAir()) {
+            return false;
+        }
+
+        // 3. Water hits a pool or lake
+        FluidState belowFluid = world.getFluidState(downPos);
+        if (belowFluid.isIn(FluidTags.WATER)) {
+            // Pool is still water
+            if (belowFluid.isStill() || currentFluid.isStill()) {
+                return true;
+            }
+            // Shallow water on top of solid block
+            BlockState floorState = world.getBlockState(downPos.down());
+            if (!floorState.getCollisionShape(world, downPos.down()).isEmpty() || floorState.isSolid()) {
+                return true;
+            }
+        }
+
+        // Otherwise it's still dropping down through open space
+        return false;
     }
 
     private void emitParticlesAndSound(ClientWorld world, BlockPos playerPos) {
@@ -111,7 +150,7 @@ public final class WaterfallManager {
 
             double distSq = pos.getSquaredDistance(playerPos);
             if (distSq > (SEARCH_RADIUS_XZ + 8) * (SEARCH_RADIUS_XZ + 8) || data.lifetime <= 0) {
-                if (!isStillWaterfall(world, pos)) {
+                if (!isWaterImpactBase(world, pos)) {
                     it.remove();
                     continue;
                 }
@@ -133,16 +172,8 @@ public final class WaterfallManager {
         }
     }
 
-    private boolean isStillWaterfall(ClientWorld world, BlockPos pos) {
-        if (!world.getFluidState(pos).isIn(FluidTags.WATER)) {
-            return false;
-        }
-        FluidState above = world.getFluidState(pos.up());
-        return !above.isEmpty() && above.isIn(FluidTags.WATER) && !above.isStill();
-    }
-
     private void spawnWaterfallParticles(ClientWorld world, BlockPos pos, int height) {
-        // Particles radiate slightly OUTWARD from the stream impact center
+        // Particles radiate in a ring OUTWARD from the stream impact center
         double angle = random.nextDouble() * Math.PI * 2.0;
         double mistDist = 0.45 + random.nextDouble() * 0.55;
         double px = pos.getX() + 0.5 + Math.cos(angle) * mistDist;
@@ -153,19 +184,19 @@ public final class WaterfallManager {
         double mvy = 0.025 + random.nextDouble() * 0.035;
         double mvz = Math.sin(angle) * (0.015 + random.nextDouble() * 0.025);
 
-        // 1. Pure white mist (Campfire smoke sprite, tinted crisp white with soft alpha)
+        // 1. Pure white mist
         if (random.nextFloat() < (height >= 8 ? 0.70F : 0.45F)) {
             world.addParticle(WaterfallMistClient.MIST, px, py, pz, mvx, mvy, mvz);
         }
 
         // 2. Soft white cloud puff
-        if (random.nextFloat() < 0.35F) {
+        if (random.nextFloat() < 0.30F) {
             double cx = pos.getX() + 0.5 + Math.cos(angle) * (0.40 + random.nextDouble() * 0.40);
             double cz = pos.getZ() + 0.5 + Math.sin(angle) * (0.40 + random.nextDouble() * 0.40);
             world.addParticle(ParticleTypes.CLOUD, cx, py + 0.05, cz, mvx * 0.5, 0.015, mvz * 0.5);
         }
 
-        // 3. Water splashes (jumping outward from impact)
+        // 3. Water splashes jumping outward from impact
         int splashCount = 1 + (height >= 6 ? 2 : 1);
         for (int i = 0; i < splashCount; i++) {
             double sAngle = random.nextDouble() * Math.PI * 2.0;
